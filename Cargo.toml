@@ -1,0 +1,19 @@
+[package]
+name = "matrix_multiply"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name"]
+description = "A comprehensive matrix multiplication library in Rust"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/matrix_multiply"
+keywords = ["matrix", "linear-algebra", "multiplication", "math"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "matrix_bench"
+harness = false
