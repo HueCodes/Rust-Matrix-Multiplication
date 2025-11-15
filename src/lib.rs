@@ -60,21 +60,78 @@ where
             ));
         }
 
-        let mut result = Matrix::new(self.rows, other.cols);
+        const TILE_THRESHOLD: usize = 128;
+        const TILE_SIZE: usize = 32;
+
+        if self.rows >= TILE_THRESHOLD
+            && self.cols >= TILE_THRESHOLD
+            && other.cols >= TILE_THRESHOLD
+        {
+            return Ok(self.multiply_tiled(other, TILE_SIZE));
+        }
+
+        let mut result: Matrix<T> = Matrix::new(self.rows, other.cols);
+        let a_cols = self.cols;
+        let b_cols = other.cols;
 
         for i in 0..self.rows {
-            for j in 0..other.cols {
+            for j in 0..b_cols {
                 let mut sum = T::default();
-                for k in 0..self.cols {
-                    let a = self.get(i, k).unwrap().clone();
-                    let b = other.get(k, j).unwrap().clone();
-                    sum = sum + (a * b);
+                let mut a_idx = i * a_cols;
+                let mut b_idx = j;
+
+                for _ in 0..a_cols {
+                    // Direct index math avoids repeated bounds checks from `get`.
+                    let a_val = self.data[a_idx].clone();
+                    let b_val = other.data[b_idx].clone();
+                    sum = sum + (a_val * b_val);
+                    a_idx += 1;
+                    b_idx += b_cols;
                 }
-                result.set(i, j, sum).unwrap();
+
+                result.data[i * b_cols + j] = sum;
             }
         }
 
         Ok(result)
+    }
+
+    fn multiply_tiled(&self, other: &Matrix<T>, tile: usize) -> Matrix<T> {
+        debug_assert!(tile > 0);
+
+        let mut result: Matrix<T> = Matrix::new(self.rows, other.cols);
+        let rows = self.rows;
+        let shared = self.cols;
+        let other_cols = other.cols;
+
+        for ii in (0..rows).step_by(tile) {
+            let i_max = (ii + tile).min(rows);
+            for kk in (0..shared).step_by(tile) {
+                let k_max = (kk + tile).min(shared);
+                for jj in (0..other_cols).step_by(tile) {
+                    let j_max = (jj + tile).min(other_cols);
+
+                    for i in ii..i_max {
+                        let row_offset_a = i * shared;
+                        let row_offset_res = i * other_cols;
+
+                        for j in jj..j_max {
+                            let mut sum = result.data[row_offset_res + j].clone();
+
+                            for k in kk..k_max {
+                                let a_val = self.data[row_offset_a + k].clone();
+                                let b_val = other.data[k * other_cols + j].clone();
+                                sum = sum + (a_val * b_val);
+                            }
+
+                            result.data[row_offset_res + j] = sum;
+                        }
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     /// Strassen's algorithm for matrix multiplication (faster for large matrices)
@@ -117,6 +174,7 @@ where
 
         Ok(result)
     }
+
 }
 
 impl<T> Matrix<T>
