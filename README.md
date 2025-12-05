@@ -71,6 +71,8 @@ Run benchmarks to compare performance:
 cargo bench
 ```
 
+See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis and results.
+
 ## Testing
 
 Run the test suite:
@@ -78,6 +80,8 @@ Run the test suite:
 ```bash
 cargo test
 ```
+
+See [TEST_RESULTS.md](TEST_RESULTS.md) for comprehensive test coverage details.
 
 ## Algorithm Details
 
