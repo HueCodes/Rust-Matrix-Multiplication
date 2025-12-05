@@ -6,12 +6,15 @@ A comprehensive matrix multiplication library written in Rust, providing efficie
 
 - **Generic Matrix Type**: Works with any numeric type (i32, f64, etc.)
 - **Core Operations**:
-  - Matrix multiplication (naive O(n³) algorithm)
-  - Matrix addition
+  - Matrix multiplication (standard O(n³) and Strassen's O(n^2.807))
+  - Matrix addition and subtraction
   - Matrix transposition
   - Element access and modification
+- **Performance Optimizations**:
+  - Tiled multiplication for cache efficiency
+  - Strassen's algorithm for large matrices
+  - Automatic algorithm selection based on matrix size
 - **Type Safety**: Compile-time dimension checking where possible
-- **Performance**: Optimized implementations with room for advanced algorithms
 - **Well-tested**: Comprehensive test suite included
 
 ## Installation
@@ -32,19 +35,23 @@ fn main() {
     // Create matrices
     let a = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
     let b = Matrix::from_vec(3, 2, vec![7, 8, 9, 10, 11, 12]).unwrap();
-    
+
     // Multiply matrices
     let c = a.multiply(&b).unwrap();
-    
+
+    // Use Strassen's algorithm for large matrices
+    let c_fast = a.multiply_strassen(&b).unwrap();
+
     // Access elements
     println!("Result at (0,0): {:?}", c.get(0, 0));
-    
+
     // Transpose
     let a_t = a.transpose();
-    
-    // Addition
+
+    // Addition and subtraction
     let d = Matrix::from_vec(2, 3, vec![1, 1, 1, 1, 1, 1]).unwrap();
     let sum = a.add(&d).unwrap();
+    let diff = a.subtract(&d).unwrap();
 }
 ```
 
@@ -72,9 +79,21 @@ Run the test suite:
 cargo test
 ```
 
+## Algorithm Details
+
+### Strassen's Algorithm
+
+Strassen's method reduces complexity from O(n³) to O(n^2.807) by using 7 recursive multiplications instead of 8. The algorithm:
+
+1. Divides matrices into quadrants
+2. Computes 7 products (M1-M7) using specific combinations
+3. Combines products to form the result matrix
+
+The implementation automatically uses Strassen's algorithm for matrices larger than 128x128 and handles non-power-of-2 dimensions through padding.
+
 ## Future Enhancements
 
-- [ ] Strassen's algorithm for large matrices
+- [x] Strassen's algorithm for large matrices
 - [ ] Parallel multiplication using rayon
 - [ ] SIMD optimizations
 - [ ] Sparse matrix support
