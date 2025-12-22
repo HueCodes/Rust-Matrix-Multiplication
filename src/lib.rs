@@ -1,3 +1,7 @@
+mod simd;
+
+pub use simd::{simd_available, simd_instruction_set};
+
 /// A generic matrix structure for numerical computations
 #[derive(Debug, Clone, PartialEq)]
 pub struct Matrix<T> {
