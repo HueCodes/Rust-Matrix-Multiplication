@@ -236,6 +236,7 @@ name = "matrix_multiply"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "rayon",
 ]
 
 [[package]]
