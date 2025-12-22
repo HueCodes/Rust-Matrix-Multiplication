@@ -1110,6 +1110,310 @@ where
 }
 
 // =============================================================================
+// MatrixView - Zero-Copy Submatrix References
+// =============================================================================
+
+/// A view into a submatrix without copying data.
+///
+/// `MatrixView` provides read-only access to a rectangular region of a matrix
+/// without allocating new memory. This is useful for algorithms that need to
+/// work with submatrices, such as block matrix operations.
+///
+/// # Example
+/// ```
+/// use matrix_multiply::{Matrix, MatrixView};
+///
+/// let m = Matrix::from_vec(4, 4, (0..16).collect()).unwrap();
+/// let view = MatrixView::new(&m, 1, 3, 1, 3); // 2x2 submatrix
+/// assert_eq!(view.get(0, 0), Some(&5));
+/// assert_eq!(view.get(1, 1), Some(&10));
+/// ```
+#[derive(Debug)]
+pub struct MatrixView<'a, T> {
+    matrix: &'a Matrix<T>,
+    row_start: usize,
+    row_end: usize,
+    col_start: usize,
+    col_end: usize,
+}
+
+impl<'a, T> MatrixView<'a, T> {
+    /// Create a new view into a submatrix.
+    ///
+    /// # Arguments
+    /// * `matrix` - The source matrix
+    /// * `row_start` - Starting row (inclusive)
+    /// * `row_end` - Ending row (exclusive)
+    /// * `col_start` - Starting column (inclusive)
+    /// * `col_end` - Ending column (exclusive)
+    ///
+    /// # Panics
+    /// Panics if the bounds are invalid.
+    pub fn new(
+        matrix: &'a Matrix<T>,
+        row_start: usize,
+        row_end: usize,
+        col_start: usize,
+        col_end: usize,
+    ) -> Self {
+        assert!(row_start <= row_end, "row_start must be <= row_end");
+        assert!(col_start <= col_end, "col_start must be <= col_end");
+        assert!(row_end <= matrix.rows, "row_end exceeds matrix rows");
+        assert!(col_end <= matrix.cols, "col_end exceeds matrix cols");
+
+        MatrixView {
+            matrix,
+            row_start,
+            row_end,
+            col_start,
+            col_end,
+        }
+    }
+
+    /// Returns the number of rows in the view.
+    #[inline]
+    pub fn rows(&self) -> usize {
+        self.row_end - self.row_start
+    }
+
+    /// Returns the number of columns in the view.
+    #[inline]
+    pub fn cols(&self) -> usize {
+        self.col_end - self.col_start
+    }
+
+    /// Returns the shape as (rows, cols).
+    #[inline]
+    pub fn shape(&self) -> (usize, usize) {
+        (self.rows(), self.cols())
+    }
+
+    /// Get an element at position (row, col) relative to the view.
+    ///
+    /// Returns None if out of bounds.
+    pub fn get(&self, row: usize, col: usize) -> Option<&T> {
+        if row >= self.rows() || col >= self.cols() {
+            return None;
+        }
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        Some(&self.matrix.data[actual_row * self.matrix.cols + actual_col])
+    }
+
+    /// Returns an iterator over elements in the view in row-major order.
+    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
+        (self.row_start..self.row_end).flat_map(move |i| {
+            (self.col_start..self.col_end)
+                .map(move |j| &self.matrix.data[i * self.matrix.cols + j])
+        })
+    }
+
+    /// Returns an iterator over a specific row in the view.
+    pub fn row(&self, row: usize) -> impl Iterator<Item = &T> + '_ {
+        assert!(row < self.rows(), "Row index out of bounds");
+        let actual_row = self.row_start + row;
+        let start = actual_row * self.matrix.cols + self.col_start;
+        self.matrix.data[start..start + self.cols()].iter()
+    }
+
+    /// Returns an iterator over a specific column in the view.
+    pub fn col(&self, col: usize) -> impl Iterator<Item = &T> + '_ {
+        assert!(col < self.cols(), "Column index out of bounds");
+        let actual_col = self.col_start + col;
+        (self.row_start..self.row_end)
+            .map(move |i| &self.matrix.data[i * self.matrix.cols + actual_col])
+    }
+}
+
+impl<'a, T> std::ops::Index<(usize, usize)> for MatrixView<'a, T> {
+    type Output = T;
+
+    /// Access element using `view[(row, col)]` syntax.
+    #[inline]
+    fn index(&self, (row, col): (usize, usize)) -> &Self::Output {
+        assert!(row < self.rows() && col < self.cols(),
+            "Index out of bounds: ({}, {}) for {}x{} view", row, col, self.rows(), self.cols());
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        &self.matrix.data[actual_row * self.matrix.cols + actual_col]
+    }
+}
+
+impl<'a, T: Clone + Default> MatrixView<'a, T> {
+    /// Convert the view to an owned Matrix.
+    ///
+    /// This creates a copy of the viewed data.
+    pub fn to_matrix(&self) -> Matrix<T> {
+        let mut data = Vec::with_capacity(self.rows() * self.cols());
+        for i in self.row_start..self.row_end {
+            for j in self.col_start..self.col_end {
+                data.push(self.matrix.data[i * self.matrix.cols + j].clone());
+            }
+        }
+        Matrix {
+            rows: self.rows(),
+            cols: self.cols(),
+            data,
+        }
+    }
+}
+
+/// A mutable view into a submatrix without copying data.
+///
+/// `MatrixViewMut` provides read-write access to a rectangular region of a matrix
+/// without allocating new memory.
+///
+/// # Example
+/// ```
+/// use matrix_multiply::{Matrix, MatrixViewMut};
+///
+/// let mut m = Matrix::from_vec(3, 3, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+/// let mut view = MatrixViewMut::new(&mut m, 0, 2, 0, 2);
+/// view[(0, 0)] = 100;
+/// assert_eq!(m[(0, 0)], 100);
+/// ```
+#[derive(Debug)]
+pub struct MatrixViewMut<'a, T> {
+    matrix: &'a mut Matrix<T>,
+    row_start: usize,
+    row_end: usize,
+    col_start: usize,
+    col_end: usize,
+}
+
+impl<'a, T> MatrixViewMut<'a, T> {
+    /// Create a new mutable view into a submatrix.
+    pub fn new(
+        matrix: &'a mut Matrix<T>,
+        row_start: usize,
+        row_end: usize,
+        col_start: usize,
+        col_end: usize,
+    ) -> Self {
+        assert!(row_start <= row_end, "row_start must be <= row_end");
+        assert!(col_start <= col_end, "col_start must be <= col_end");
+        assert!(row_end <= matrix.rows, "row_end exceeds matrix rows");
+        assert!(col_end <= matrix.cols, "col_end exceeds matrix cols");
+
+        MatrixViewMut {
+            matrix,
+            row_start,
+            row_end,
+            col_start,
+            col_end,
+        }
+    }
+
+    /// Returns the number of rows in the view.
+    #[inline]
+    pub fn rows(&self) -> usize {
+        self.row_end - self.row_start
+    }
+
+    /// Returns the number of columns in the view.
+    #[inline]
+    pub fn cols(&self) -> usize {
+        self.col_end - self.col_start
+    }
+
+    /// Returns the shape as (rows, cols).
+    #[inline]
+    pub fn shape(&self) -> (usize, usize) {
+        (self.rows(), self.cols())
+    }
+
+    /// Get an element at position (row, col) relative to the view.
+    pub fn get(&self, row: usize, col: usize) -> Option<&T> {
+        if row >= self.rows() || col >= self.cols() {
+            return None;
+        }
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        Some(&self.matrix.data[actual_row * self.matrix.cols + actual_col])
+    }
+
+    /// Get a mutable reference to an element at position (row, col).
+    pub fn get_mut(&mut self, row: usize, col: usize) -> Option<&mut T> {
+        if row >= self.rows() || col >= self.cols() {
+            return None;
+        }
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        let cols = self.matrix.cols;
+        Some(&mut self.matrix.data[actual_row * cols + actual_col])
+    }
+
+    /// Set an element at position (row, col) relative to the view.
+    pub fn set(&mut self, row: usize, col: usize, value: T) -> Result<(), String> {
+        if row >= self.rows() || col >= self.cols() {
+            return Err(format!("Index out of bounds: ({}, {})", row, col));
+        }
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        self.matrix.data[actual_row * self.matrix.cols + actual_col] = value;
+        Ok(())
+    }
+}
+
+impl<'a, T> std::ops::Index<(usize, usize)> for MatrixViewMut<'a, T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, (row, col): (usize, usize)) -> &Self::Output {
+        assert!(row < self.rows() && col < self.cols(),
+            "Index out of bounds: ({}, {}) for {}x{} view", row, col, self.rows(), self.cols());
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        &self.matrix.data[actual_row * self.matrix.cols + actual_col]
+    }
+}
+
+impl<'a, T> std::ops::IndexMut<(usize, usize)> for MatrixViewMut<'a, T> {
+    #[inline]
+    fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut Self::Output {
+        assert!(row < self.rows() && col < self.cols(),
+            "Index out of bounds: ({}, {}) for {}x{} view", row, col, self.rows(), self.cols());
+        let actual_row = self.row_start + row;
+        let actual_col = self.col_start + col;
+        &mut self.matrix.data[actual_row * self.matrix.cols + actual_col]
+    }
+}
+
+impl<T> Matrix<T> {
+    /// Create an immutable view into a submatrix.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(4, 4, (0..16).collect()).unwrap();
+    /// let view = m.view(1, 3, 1, 3);
+    /// assert_eq!(view.rows(), 2);
+    /// assert_eq!(view.cols(), 2);
+    /// ```
+    pub fn view(&self, row_start: usize, row_end: usize, col_start: usize, col_end: usize) -> MatrixView<'_, T> {
+        MatrixView::new(self, row_start, row_end, col_start, col_end)
+    }
+
+    /// Create a mutable view into a submatrix.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(3, 3, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+    /// {
+    ///     let mut view = m.view_mut(0, 2, 0, 2);
+    ///     view[(0, 0)] = 100;
+    /// }
+    /// assert_eq!(m[(0, 0)], 100);
+    /// ```
+    pub fn view_mut(&mut self, row_start: usize, row_end: usize, col_start: usize, col_end: usize) -> MatrixViewMut<'_, T> {
+        MatrixViewMut::new(self, row_start, row_end, col_start, col_end)
+    }
+}
+
+// =============================================================================
 // Additional Utility Methods
 // =============================================================================
 
