@@ -979,6 +979,137 @@ impl Matrix<f64> {
 }
 
 // =============================================================================
+// In-Place Operations (Memory Efficient)
+// =============================================================================
+
+impl<T: Clone> Matrix<T> {
+    /// Transpose the matrix in-place (only for square matrices).
+    ///
+    /// This operation avoids allocating a new matrix by swapping elements.
+    /// For non-square matrices, use `transpose()` which returns a new matrix.
+    ///
+    /// # Panics
+    /// Panics if the matrix is not square.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(3, 3, vec![
+    ///     1, 2, 3,
+    ///     4, 5, 6,
+    ///     7, 8, 9,
+    /// ]).unwrap();
+    /// m.transpose_mut();
+    /// assert_eq!(m[(0, 1)], 4);
+    /// assert_eq!(m[(1, 0)], 2);
+    /// ```
+    pub fn transpose_mut(&mut self) {
+        assert!(self.is_square(), "transpose_mut requires a square matrix");
+        let n = self.rows;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                self.data.swap(i * n + j, j * n + i);
+            }
+        }
+    }
+}
+
+impl<T> Matrix<T>
+where
+    T: Clone + std::ops::AddAssign,
+{
+    /// Add another matrix to this one in-place (+=).
+    ///
+    /// This avoids allocating a new result matrix.
+    ///
+    /// # Errors
+    /// Returns an error if the matrices have different dimensions.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut a = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// let b = Matrix::from_vec(2, 2, vec![5, 6, 7, 8]).unwrap();
+    /// a.add_assign(&b).unwrap();
+    /// assert_eq!(a[(0, 0)], 6);
+    /// assert_eq!(a[(1, 1)], 12);
+    /// ```
+    pub fn add_assign(&mut self, other: &Matrix<T>) -> Result<(), String> {
+        if self.rows != other.rows || self.cols != other.cols {
+            return Err(format!(
+                "Matrix dimension mismatch: {}x{} cannot add with {}x{}",
+                self.rows, self.cols, other.rows, other.cols
+            ));
+        }
+        for (a, b) in self.data.iter_mut().zip(other.data.iter()) {
+            *a += b.clone();
+        }
+        Ok(())
+    }
+}
+
+impl<T> Matrix<T>
+where
+    T: Clone + std::ops::SubAssign,
+{
+    /// Subtract another matrix from this one in-place (-=).
+    ///
+    /// This avoids allocating a new result matrix.
+    ///
+    /// # Errors
+    /// Returns an error if the matrices have different dimensions.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut a = Matrix::from_vec(2, 2, vec![10, 20, 30, 40]).unwrap();
+    /// let b = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// a.sub_assign(&b).unwrap();
+    /// assert_eq!(a[(0, 0)], 9);
+    /// assert_eq!(a[(1, 1)], 36);
+    /// ```
+    pub fn sub_assign(&mut self, other: &Matrix<T>) -> Result<(), String> {
+        if self.rows != other.rows || self.cols != other.cols {
+            return Err(format!(
+                "Matrix dimension mismatch: {}x{} cannot subtract {}x{}",
+                self.rows, self.cols, other.rows, other.cols
+            ));
+        }
+        for (a, b) in self.data.iter_mut().zip(other.data.iter()) {
+            *a -= b.clone();
+        }
+        Ok(())
+    }
+}
+
+impl<T> Matrix<T>
+where
+    T: Clone + std::ops::MulAssign,
+{
+    /// Scale all elements in-place by a scalar value.
+    ///
+    /// This avoids allocating a new result matrix.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// m.scale_mut(3);
+    /// assert_eq!(m[(0, 0)], 3);
+    /// assert_eq!(m[(1, 1)], 12);
+    /// ```
+    pub fn scale_mut(&mut self, scalar: T) {
+        for elem in &mut self.data {
+            *elem *= scalar.clone();
+        }
+    }
+}
+
+// =============================================================================
 // Additional Utility Methods
 // =============================================================================
 
