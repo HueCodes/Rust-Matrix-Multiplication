@@ -389,6 +389,582 @@ where
     }
 }
 
+// =============================================================================
+// Index Traits - Enable matrix[(row, col)] syntax
+// =============================================================================
+
+impl<T> std::ops::Index<(usize, usize)> for Matrix<T> {
+    type Output = T;
+
+    /// Access matrix element using `matrix[(row, col)]` syntax.
+    ///
+    /// # Panics
+    /// Panics if the indices are out of bounds.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// assert_eq!(m[(0, 0)], 1);
+    /// assert_eq!(m[(1, 1)], 4);
+    /// ```
+    #[inline]
+    fn index(&self, (row, col): (usize, usize)) -> &Self::Output {
+        assert!(row < self.rows && col < self.cols,
+            "Index out of bounds: ({}, {}) for {}x{} matrix", row, col, self.rows, self.cols);
+        &self.data[row * self.cols + col]
+    }
+}
+
+impl<T> std::ops::IndexMut<(usize, usize)> for Matrix<T> {
+    /// Mutably access matrix element using `matrix[(row, col)]` syntax.
+    ///
+    /// # Panics
+    /// Panics if the indices are out of bounds.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// m[(0, 0)] = 10;
+    /// assert_eq!(m[(0, 0)], 10);
+    /// ```
+    #[inline]
+    fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut Self::Output {
+        assert!(row < self.rows && col < self.cols,
+            "Index out of bounds: ({}, {}) for {}x{} matrix", row, col, self.rows, self.cols);
+        &mut self.data[row * self.cols + col]
+    }
+}
+
+// =============================================================================
+// Display Trait - Pretty printing
+// =============================================================================
+
+impl<T: std::fmt::Display> std::fmt::Display for Matrix<T> {
+    /// Format matrix for display with aligned columns.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+    /// println!("{}", m);
+    /// // Output:
+    /// // [1, 2, 3]
+    /// // [4, 5, 6]
+    /// ```
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for i in 0..self.rows {
+            write!(f, "[")?;
+            for j in 0..self.cols {
+                if j > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", self.data[i * self.cols + j])?;
+            }
+            writeln!(f, "]")?;
+        }
+        Ok(())
+    }
+}
+
+// =============================================================================
+// From/Into Conversions
+// =============================================================================
+
+impl<T: Clone + Default> From<Vec<Vec<T>>> for Matrix<T> {
+    /// Create a matrix from a 2D vector (Vec of rows).
+    ///
+    /// # Panics
+    /// Panics if rows have inconsistent lengths.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let data = vec![
+    ///     vec![1, 2, 3],
+    ///     vec![4, 5, 6],
+    /// ];
+    /// let m: Matrix<i32> = data.into();
+    /// assert_eq!(m.rows, 2);
+    /// assert_eq!(m.cols, 3);
+    /// assert_eq!(m[(0, 0)], 1);
+    /// ```
+    fn from(rows: Vec<Vec<T>>) -> Self {
+        if rows.is_empty() {
+            return Matrix {
+                rows: 0,
+                cols: 0,
+                data: Vec::new(),
+            };
+        }
+
+        let num_rows = rows.len();
+        let num_cols = rows[0].len();
+
+        // Verify all rows have the same length
+        for (i, row) in rows.iter().enumerate() {
+            assert!(row.len() == num_cols,
+                "Inconsistent row length at row {}: expected {}, got {}", i, num_cols, row.len());
+        }
+
+        let mut data = Vec::with_capacity(num_rows * num_cols);
+        for row in rows {
+            data.extend(row);
+        }
+
+        Matrix {
+            rows: num_rows,
+            cols: num_cols,
+            data,
+        }
+    }
+}
+
+impl<T: Clone> From<Matrix<T>> for Vec<Vec<T>> {
+    /// Convert a matrix back to a 2D vector (Vec of rows).
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+    /// let rows: Vec<Vec<i32>> = m.into();
+    /// assert_eq!(rows, vec![vec![1, 2, 3], vec![4, 5, 6]]);
+    /// ```
+    fn from(matrix: Matrix<T>) -> Self {
+        let mut result = Vec::with_capacity(matrix.rows);
+        for i in 0..matrix.rows {
+            let start = i * matrix.cols;
+            let end = start + matrix.cols;
+            result.push(matrix.data[start..end].to_vec());
+        }
+        result
+    }
+}
+
+impl<T: Clone + Default, const R: usize, const C: usize> From<[[T; C]; R]> for Matrix<T> {
+    /// Create a matrix from a 2D array.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let arr = [
+    ///     [1, 2, 3],
+    ///     [4, 5, 6],
+    /// ];
+    /// let m: Matrix<i32> = arr.into();
+    /// assert_eq!(m.rows, 2);
+    /// assert_eq!(m.cols, 3);
+    /// ```
+    fn from(arr: [[T; C]; R]) -> Self {
+        let mut data = Vec::with_capacity(R * C);
+        for row in arr {
+            data.extend(row);
+        }
+        Matrix {
+            rows: R,
+            cols: C,
+            data,
+        }
+    }
+}
+
+// =============================================================================
+// Iterator Support
+// =============================================================================
+
+impl<T> Matrix<T> {
+    /// Returns an iterator over references to all elements in row-major order.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// let sum: i32 = m.iter().sum();
+    /// assert_eq!(sum, 10);
+    /// ```
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.data.iter()
+    }
+
+    /// Returns an iterator over mutable references to all elements in row-major order.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// for x in m.iter_mut() {
+    ///     *x *= 2;
+    /// }
+    /// assert_eq!(m[(0, 0)], 2);
+    /// assert_eq!(m[(1, 1)], 8);
+    /// ```
+    #[inline]
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.data.iter_mut()
+    }
+
+    /// Returns an iterator over a specific row.
+    ///
+    /// # Panics
+    /// Panics if the row index is out of bounds.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+    /// let row1: Vec<&i32> = m.row(1).collect();
+    /// assert_eq!(row1, vec![&4, &5, &6]);
+    /// ```
+    #[inline]
+    pub fn row(&self, row: usize) -> impl Iterator<Item = &T> {
+        assert!(row < self.rows, "Row index {} out of bounds for {} rows", row, self.rows);
+        let start = row * self.cols;
+        self.data[start..start + self.cols].iter()
+    }
+
+    /// Returns an iterator over a specific column.
+    ///
+    /// # Panics
+    /// Panics if the column index is out of bounds.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+    /// let col1: Vec<&i32> = m.col(1).collect();
+    /// assert_eq!(col1, vec![&2, &5]);
+    /// ```
+    #[inline]
+    pub fn col(&self, col: usize) -> impl Iterator<Item = &T> + '_ {
+        assert!(col < self.cols, "Column index {} out of bounds for {} cols", col, self.cols);
+        (0..self.rows).map(move |row| &self.data[row * self.cols + col])
+    }
+
+    /// Returns an iterator over all rows as slices.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+    /// for row in m.rows_iter() {
+    ///     println!("{:?}", row);
+    /// }
+    /// ```
+    #[inline]
+    pub fn rows_iter(&self) -> impl Iterator<Item = &[T]> {
+        self.data.chunks(self.cols)
+    }
+
+    /// Returns the total number of elements in the matrix.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m: Matrix<i32> = Matrix::new(3, 4);
+    /// assert_eq!(m.len(), 12);
+    /// ```
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Returns true if the matrix has no elements.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m: Matrix<i32> = Matrix::new(0, 0);
+    /// assert!(m.is_empty());
+    /// ```
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Returns the dimensions as a tuple (rows, cols).
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m: Matrix<i32> = Matrix::new(3, 4);
+    /// assert_eq!(m.shape(), (3, 4));
+    /// ```
+    #[inline]
+    pub fn shape(&self) -> (usize, usize) {
+        (self.rows, self.cols)
+    }
+
+    /// Returns true if the matrix is square.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let square: Matrix<i32> = Matrix::new(3, 3);
+    /// let rect: Matrix<i32> = Matrix::new(2, 3);
+    /// assert!(square.is_square());
+    /// assert!(!rect.is_square());
+    /// ```
+    #[inline]
+    pub fn is_square(&self) -> bool {
+        self.rows == self.cols
+    }
+}
+
+impl<T> IntoIterator for Matrix<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    /// Consumes the matrix and returns an iterator over all elements.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// let v: Vec<i32> = m.into_iter().collect();
+    /// assert_eq!(v, vec![1, 2, 3, 4]);
+    /// ```
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Matrix<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Matrix<T> {
+    type Item = &'a mut T;
+    type IntoIter = std::slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.iter_mut()
+    }
+}
+
+// =============================================================================
+// Approximate Equality for Floating Point Matrices
+// =============================================================================
+
+impl Matrix<f32> {
+    /// Check if two f32 matrices are approximately equal within a tolerance.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let a = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+    /// let b = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+    /// assert!(a.approx_eq(&b, 1e-6));
+    /// ```
+    pub fn approx_eq(&self, other: &Matrix<f32>, tolerance: f32) -> bool {
+        if self.rows != other.rows || self.cols != other.cols {
+            return false;
+        }
+        self.data.iter().zip(other.data.iter())
+            .all(|(a, b)| (a - b).abs() <= tolerance)
+    }
+
+    /// Check if two f32 matrices are approximately equal with relative tolerance.
+    ///
+    /// For each pair of elements, checks if |a - b| <= tolerance * max(|a|, |b|).
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let a = Matrix::from_vec(2, 2, vec![1000.0_f32, 2000.0, 3000.0, 4000.0]).unwrap();
+    /// let b = Matrix::from_vec(2, 2, vec![1000.1_f32, 2000.2, 3000.3, 4000.4]).unwrap();
+    /// assert!(a.approx_eq_relative(&b, 1e-3));
+    /// ```
+    pub fn approx_eq_relative(&self, other: &Matrix<f32>, tolerance: f32) -> bool {
+        if self.rows != other.rows || self.cols != other.cols {
+            return false;
+        }
+        self.data.iter().zip(other.data.iter()).all(|(a, b)| {
+            let max_abs = a.abs().max(b.abs());
+            if max_abs == 0.0 {
+                true
+            } else {
+                (a - b).abs() <= tolerance * max_abs
+            }
+        })
+    }
+}
+
+impl Matrix<f64> {
+    /// Check if two f64 matrices are approximately equal within a tolerance.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let a = Matrix::from_vec(2, 2, vec![1.0_f64, 2.0, 3.0, 4.0]).unwrap();
+    /// let b = Matrix::from_vec(2, 2, vec![1.0_f64, 2.0, 3.0, 4.0]).unwrap();
+    /// assert!(a.approx_eq(&b, 1e-10));
+    /// ```
+    pub fn approx_eq(&self, other: &Matrix<f64>, tolerance: f64) -> bool {
+        if self.rows != other.rows || self.cols != other.cols {
+            return false;
+        }
+        self.data.iter().zip(other.data.iter())
+            .all(|(a, b)| (a - b).abs() <= tolerance)
+    }
+
+    /// Check if two f64 matrices are approximately equal with relative tolerance.
+    ///
+    /// For each pair of elements, checks if |a - b| <= tolerance * max(|a|, |b|).
+    pub fn approx_eq_relative(&self, other: &Matrix<f64>, tolerance: f64) -> bool {
+        if self.rows != other.rows || self.cols != other.cols {
+            return false;
+        }
+        self.data.iter().zip(other.data.iter()).all(|(a, b)| {
+            let max_abs = a.abs().max(b.abs());
+            if max_abs == 0.0 {
+                true
+            } else {
+                (a - b).abs() <= tolerance * max_abs
+            }
+        })
+    }
+}
+
+// =============================================================================
+// Additional Utility Methods
+// =============================================================================
+
+impl<T: Clone + Default> Matrix<T> {
+    /// Create an identity matrix of the given size.
+    ///
+    /// Note: Requires T to implement From<u8> for setting diagonal to 1.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let identity: Matrix<i32> = Matrix::identity(3);
+    /// assert_eq!(identity[(0, 0)], 1);
+    /// assert_eq!(identity[(0, 1)], 0);
+    /// assert_eq!(identity[(1, 1)], 1);
+    /// ```
+    pub fn identity(size: usize) -> Self
+    where
+        T: From<u8>,
+    {
+        let mut m = Matrix::new(size, size);
+        for i in 0..size {
+            m.data[i * size + i] = T::from(1);
+        }
+        m
+    }
+
+    /// Create a matrix filled with a specific value.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m: Matrix<i32> = Matrix::fill(2, 3, 42);
+    /// assert!(m.iter().all(|&x| x == 42));
+    /// ```
+    pub fn fill(rows: usize, cols: usize, value: T) -> Self {
+        Matrix {
+            rows,
+            cols,
+            data: vec![value; rows * cols],
+        }
+    }
+
+    /// Create a matrix from a function that computes each element.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m: Matrix<i32> = Matrix::from_fn(3, 3, |i, j| (i * 3 + j) as i32);
+    /// assert_eq!(m[(0, 0)], 0);
+    /// assert_eq!(m[(1, 1)], 4);
+    /// assert_eq!(m[(2, 2)], 8);
+    /// ```
+    pub fn from_fn<F>(rows: usize, cols: usize, f: F) -> Self
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        let mut data = Vec::with_capacity(rows * cols);
+        for i in 0..rows {
+            for j in 0..cols {
+                data.push(f(i, j));
+            }
+        }
+        Matrix { rows, cols, data }
+    }
+
+    /// Map a function over all elements, returning a new matrix.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// let doubled = m.map(|x| x * 2);
+    /// assert_eq!(doubled[(0, 0)], 2);
+    /// assert_eq!(doubled[(1, 1)], 8);
+    /// ```
+    pub fn map<U, F>(&self, f: F) -> Matrix<U>
+    where
+        F: Fn(&T) -> U,
+        U: Clone + Default,
+    {
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data: self.data.iter().map(f).collect(),
+        }
+    }
+
+    /// Apply a function to each element in place.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// m.apply(|x| *x *= 2);
+    /// assert_eq!(m[(0, 0)], 2);
+    /// assert_eq!(m[(1, 1)], 8);
+    /// ```
+    pub fn apply<F>(&mut self, f: F)
+    where
+        F: Fn(&mut T),
+    {
+        for elem in &mut self.data {
+            f(elem);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -678,5 +1254,237 @@ mod tests {
         let b: Matrix<i32> = Matrix::new(128, 256);
 
         assert!(a.multiply_strassen(&b).is_err());
+    }
+
+    // =========================================================================
+    // Ergonomics Tests
+    // =========================================================================
+
+    #[test]
+    fn test_index_access() {
+        let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        assert_eq!(m[(0, 0)], 1);
+        assert_eq!(m[(0, 2)], 3);
+        assert_eq!(m[(1, 0)], 4);
+        assert_eq!(m[(1, 2)], 6);
+    }
+
+    #[test]
+    fn test_index_mut_access() {
+        let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        m[(0, 0)] = 10;
+        m[(1, 1)] = 40;
+        assert_eq!(m[(0, 0)], 10);
+        assert_eq!(m[(1, 1)], 40);
+    }
+
+    #[test]
+    #[should_panic(expected = "Index out of bounds")]
+    fn test_index_out_of_bounds() {
+        let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        let _ = m[(2, 0)];
+    }
+
+    #[test]
+    fn test_display() {
+        let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        let s = format!("{}", m);
+        assert!(s.contains("[1, 2]"));
+        assert!(s.contains("[3, 4]"));
+    }
+
+    #[test]
+    fn test_from_vec_vec() {
+        let data = vec![
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        ];
+        let m: Matrix<i32> = data.into();
+        assert_eq!(m.rows, 2);
+        assert_eq!(m.cols, 3);
+        assert_eq!(m[(0, 0)], 1);
+        assert_eq!(m[(1, 2)], 6);
+    }
+
+    #[test]
+    fn test_into_vec_vec() {
+        let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let rows: Vec<Vec<i32>> = m.into();
+        assert_eq!(rows, vec![vec![1, 2, 3], vec![4, 5, 6]]);
+    }
+
+    #[test]
+    fn test_from_array() {
+        let arr = [
+            [1, 2, 3],
+            [4, 5, 6],
+        ];
+        let m: Matrix<i32> = arr.into();
+        assert_eq!(m.rows, 2);
+        assert_eq!(m.cols, 3);
+        assert_eq!(m[(1, 1)], 5);
+    }
+
+    #[test]
+    fn test_iter() {
+        let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        let sum: i32 = m.iter().sum();
+        assert_eq!(sum, 10);
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        for x in m.iter_mut() {
+            *x *= 2;
+        }
+        assert_eq!(m[(0, 0)], 2);
+        assert_eq!(m[(1, 1)], 8);
+    }
+
+    #[test]
+    fn test_into_iter() {
+        let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        let v: Vec<i32> = m.into_iter().collect();
+        assert_eq!(v, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_row_iterator() {
+        let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let row0: Vec<&i32> = m.row(0).collect();
+        let row1: Vec<&i32> = m.row(1).collect();
+        assert_eq!(row0, vec![&1, &2, &3]);
+        assert_eq!(row1, vec![&4, &5, &6]);
+    }
+
+    #[test]
+    fn test_col_iterator() {
+        let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let col0: Vec<&i32> = m.col(0).collect();
+        let col1: Vec<&i32> = m.col(1).collect();
+        assert_eq!(col0, vec![&1, &4]);
+        assert_eq!(col1, vec![&2, &5]);
+    }
+
+    #[test]
+    fn test_rows_iter() {
+        let m = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let rows: Vec<&[i32]> = m.rows_iter().collect();
+        assert_eq!(rows[0], &[1, 2, 3]);
+        assert_eq!(rows[1], &[4, 5, 6]);
+    }
+
+    #[test]
+    fn test_len_is_empty() {
+        let m: Matrix<i32> = Matrix::new(3, 4);
+        assert_eq!(m.len(), 12);
+        assert!(!m.is_empty());
+
+        let empty: Matrix<i32> = Matrix::new(0, 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_shape() {
+        let m: Matrix<i32> = Matrix::new(3, 4);
+        assert_eq!(m.shape(), (3, 4));
+    }
+
+    #[test]
+    fn test_is_square() {
+        let square: Matrix<i32> = Matrix::new(3, 3);
+        let rect: Matrix<i32> = Matrix::new(2, 3);
+        assert!(square.is_square());
+        assert!(!rect.is_square());
+    }
+
+    #[test]
+    fn test_approx_eq_f32() {
+        let a = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+        let b = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+        let c = Matrix::from_vec(2, 2, vec![1.1_f32, 2.0, 3.0, 4.0]).unwrap();
+
+        assert!(a.approx_eq(&b, 1e-6));
+        assert!(!a.approx_eq(&c, 1e-6));
+        assert!(a.approx_eq(&c, 0.2));
+    }
+
+    #[test]
+    fn test_approx_eq_f64() {
+        let a = Matrix::from_vec(2, 2, vec![1.0_f64, 2.0, 3.0, 4.0]).unwrap();
+        let b = Matrix::from_vec(2, 2, vec![1.0_f64, 2.0, 3.0, 4.0]).unwrap();
+
+        assert!(a.approx_eq(&b, 1e-10));
+    }
+
+    #[test]
+    fn test_approx_eq_relative() {
+        let a = Matrix::from_vec(2, 2, vec![1000.0_f32, 2000.0, 3000.0, 4000.0]).unwrap();
+        let b = Matrix::from_vec(2, 2, vec![1000.1_f32, 2000.2, 3000.3, 4000.4]).unwrap();
+
+        assert!(a.approx_eq_relative(&b, 1e-3));
+        assert!(!a.approx_eq_relative(&b, 1e-5));
+    }
+
+    #[test]
+    fn test_identity() {
+        let identity: Matrix<i32> = Matrix::identity(3);
+        assert_eq!(identity[(0, 0)], 1);
+        assert_eq!(identity[(0, 1)], 0);
+        assert_eq!(identity[(1, 1)], 1);
+        assert_eq!(identity[(2, 2)], 1);
+    }
+
+    #[test]
+    fn test_fill() {
+        let m: Matrix<i32> = Matrix::fill(2, 3, 42);
+        assert!(m.iter().all(|&x| x == 42));
+        assert_eq!(m.rows, 2);
+        assert_eq!(m.cols, 3);
+    }
+
+    #[test]
+    fn test_from_fn() {
+        let m: Matrix<i32> = Matrix::from_fn(3, 3, |i, j| (i * 3 + j) as i32);
+        assert_eq!(m[(0, 0)], 0);
+        assert_eq!(m[(1, 1)], 4);
+        assert_eq!(m[(2, 2)], 8);
+    }
+
+    #[test]
+    fn test_map() {
+        let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        let doubled = m.map(|x| x * 2);
+        assert_eq!(doubled[(0, 0)], 2);
+        assert_eq!(doubled[(1, 1)], 8);
+    }
+
+    #[test]
+    fn test_apply() {
+        let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        m.apply(|x| *x *= 2);
+        assert_eq!(m[(0, 0)], 2);
+        assert_eq!(m[(1, 1)], 8);
+    }
+
+    #[test]
+    fn test_for_loop_iteration() {
+        let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        let mut sum = 0;
+        for &x in &m {
+            sum += x;
+        }
+        assert_eq!(sum, 10);
+    }
+
+    #[test]
+    fn test_for_loop_mut_iteration() {
+        let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+        for x in &mut m {
+            *x += 10;
+        }
+        assert_eq!(m[(0, 0)], 11);
+        assert_eq!(m[(1, 1)], 14);
     }
 }
