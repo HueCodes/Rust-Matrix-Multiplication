@@ -102,6 +102,133 @@ where
         Ok(result)
     }
 
+    /// Multiply matrices, storing the result in a pre-allocated matrix.
+    ///
+    /// This method allows reusing an existing matrix buffer, avoiding allocation
+    /// when performing repeated multiplications with the same output dimensions.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Matrix dimensions don't match for multiplication
+    /// - Result matrix dimensions don't match expected output
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let a = Matrix::from_vec(2, 3, vec![1, 2, 3, 4, 5, 6]).unwrap();
+    /// let b = Matrix::from_vec(3, 2, vec![7, 8, 9, 10, 11, 12]).unwrap();
+    /// let mut result: Matrix<i32> = Matrix::new(2, 2);
+    ///
+    /// a.multiply_into(&b, &mut result).unwrap();
+    /// assert_eq!(result[(0, 0)], 58);
+    /// assert_eq!(result[(1, 1)], 154);
+    /// ```
+    pub fn multiply_into(&self, other: &Matrix<T>, result: &mut Matrix<T>) -> Result<(), String> {
+        if self.cols != other.rows {
+            return Err(format!(
+                "Matrix dimension mismatch: {}x{} cannot multiply with {}x{}",
+                self.rows, self.cols, other.rows, other.cols
+            ));
+        }
+        if result.rows != self.rows || result.cols != other.cols {
+            return Err(format!(
+                "Result matrix dimensions {}x{} don't match expected {}x{}",
+                result.rows, result.cols, self.rows, other.cols
+            ));
+        }
+
+        let a_cols = self.cols;
+        let b_cols = other.cols;
+
+        // Zero out the result matrix
+        for elem in &mut result.data {
+            *elem = T::default();
+        }
+
+        for i in 0..self.rows {
+            for j in 0..b_cols {
+                let mut sum = T::default();
+                let mut a_idx = i * a_cols;
+                let mut b_idx = j;
+
+                for _ in 0..a_cols {
+                    let a_val = self.data[a_idx].clone();
+                    let b_val = other.data[b_idx].clone();
+                    sum = sum + (a_val * b_val);
+                    a_idx += 1;
+                    b_idx += b_cols;
+                }
+
+                result.data[i * b_cols + j] = sum;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Multiply matrices, accumulating into a pre-allocated matrix.
+    ///
+    /// Unlike `multiply_into`, this adds to the existing values in the result
+    /// matrix rather than overwriting them. Useful for implementing blocked
+    /// algorithms or accumulating multiple products.
+    ///
+    /// # Errors
+    /// Returns an error if matrix dimensions don't match.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let a = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// let b = Matrix::from_vec(2, 2, vec![1, 0, 0, 1]).unwrap(); // Identity
+    /// let mut result = Matrix::from_vec(2, 2, vec![10, 10, 10, 10]).unwrap();
+    ///
+    /// a.multiply_accumulate(&b, &mut result).unwrap();
+    /// assert_eq!(result[(0, 0)], 11); // 10 + 1
+    /// assert_eq!(result[(1, 1)], 14); // 10 + 4
+    /// ```
+    pub fn multiply_accumulate(&self, other: &Matrix<T>, result: &mut Matrix<T>) -> Result<(), String>
+    where
+        T: std::ops::AddAssign,
+    {
+        if self.cols != other.rows {
+            return Err(format!(
+                "Matrix dimension mismatch: {}x{} cannot multiply with {}x{}",
+                self.rows, self.cols, other.rows, other.cols
+            ));
+        }
+        if result.rows != self.rows || result.cols != other.cols {
+            return Err(format!(
+                "Result matrix dimensions {}x{} don't match expected {}x{}",
+                result.rows, result.cols, self.rows, other.cols
+            ));
+        }
+
+        let a_cols = self.cols;
+        let b_cols = other.cols;
+
+        for i in 0..self.rows {
+            for j in 0..b_cols {
+                let mut sum = T::default();
+                let mut a_idx = i * a_cols;
+                let mut b_idx = j;
+
+                for _ in 0..a_cols {
+                    let a_val = self.data[a_idx].clone();
+                    let b_val = other.data[b_idx].clone();
+                    sum = sum + (a_val * b_val);
+                    a_idx += 1;
+                    b_idx += b_cols;
+                }
+
+                result.data[i * b_cols + j] += sum;
+            }
+        }
+
+        Ok(())
+    }
+
     fn multiply_tiled(&self, other: &Matrix<T>, tile: usize) -> Matrix<T> {
         debug_assert!(tile > 0);
 
