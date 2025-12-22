@@ -1414,6 +1414,191 @@ impl<T> Matrix<T> {
 }
 
 // =============================================================================
+// Memory-Efficient Constructors
+// =============================================================================
+
+impl<T> Matrix<T> {
+    /// Create a matrix with pre-allocated capacity but uninitialized data.
+    ///
+    /// This is useful when you know the final size and want to avoid
+    /// reallocations while building the matrix.
+    ///
+    /// # Safety
+    /// The matrix is created with length 0 but capacity for `rows * cols` elements.
+    /// You must fill it completely before using.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m: Matrix<i32> = Matrix::with_capacity(3, 3);
+    /// for i in 0..9 {
+    ///     m.push(i);
+    /// }
+    /// assert_eq!(m.len(), 9);
+    /// assert_eq!(m[(1, 1)], 4);
+    /// ```
+    pub fn with_capacity(rows: usize, cols: usize) -> Self {
+        Matrix {
+            rows,
+            cols,
+            data: Vec::with_capacity(rows * cols),
+        }
+    }
+
+    /// Push an element to the matrix data in row-major order.
+    ///
+    /// Use with `with_capacity` for efficient matrix construction.
+    ///
+    /// # Panics
+    /// Panics if the matrix is already full.
+    pub fn push(&mut self, value: T) {
+        assert!(self.data.len() < self.rows * self.cols,
+            "Matrix is already full");
+        self.data.push(value);
+    }
+
+    /// Reserve additional capacity for the underlying storage.
+    ///
+    /// This is useful when you're about to add many elements and want
+    /// to avoid multiple reallocations.
+    pub fn reserve(&mut self, additional: usize) {
+        self.data.reserve(additional);
+    }
+
+    /// Returns the capacity of the underlying storage.
+    pub fn capacity(&self) -> usize {
+        self.data.capacity()
+    }
+
+    /// Shrink the capacity to fit exactly the current size.
+    ///
+    /// This can reduce memory usage after removing elements or
+    /// when you know no more elements will be added.
+    pub fn shrink_to_fit(&mut self) {
+        self.data.shrink_to_fit();
+    }
+
+    /// Clear all elements, keeping the allocated memory.
+    ///
+    /// After calling this, the matrix will have zero length but
+    /// retain its capacity.
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+}
+
+impl<T: Clone + Default> Matrix<T> {
+    /// Create a matrix from an iterator.
+    ///
+    /// The iterator should yield exactly `rows * cols` elements.
+    ///
+    /// # Errors
+    /// Returns an error if the iterator doesn't yield exactly the expected number of elements.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m: Matrix<i32> = Matrix::from_iter(3, 3, 0..9).unwrap();
+    /// assert_eq!(m[(0, 0)], 0);
+    /// assert_eq!(m[(2, 2)], 8);
+    /// ```
+    pub fn from_iter<I>(rows: usize, cols: usize, iter: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let data: Vec<T> = iter.into_iter().collect();
+        if data.len() != rows * cols {
+            return Err(format!(
+                "Iterator yielded {} elements, expected {}",
+                data.len(),
+                rows * cols
+            ));
+        }
+        Ok(Matrix { rows, cols, data })
+    }
+
+    /// Resize the matrix to new dimensions.
+    ///
+    /// If the new size is larger, fills new cells with the default value.
+    /// If smaller, truncates the data. Note: This creates a new data buffer.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// m.resize(3, 3);
+    /// assert_eq!(m.rows, 3);
+    /// assert_eq!(m.cols, 3);
+    /// assert_eq!(m[(0, 0)], 1);
+    /// assert_eq!(m[(2, 2)], 0); // New cells filled with default
+    /// ```
+    pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
+        let mut new_data = vec![T::default(); new_rows * new_cols];
+
+        let copy_rows = self.rows.min(new_rows);
+        let copy_cols = self.cols.min(new_cols);
+
+        for i in 0..copy_rows {
+            for j in 0..copy_cols {
+                new_data[i * new_cols + j] = self.data[i * self.cols + j].clone();
+            }
+        }
+
+        self.rows = new_rows;
+        self.cols = new_cols;
+        self.data = new_data;
+    }
+
+    /// Swap two elements in the matrix.
+    ///
+    /// # Panics
+    /// Panics if either index is out of bounds.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let mut m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// m.swap((0, 0), (1, 1));
+    /// assert_eq!(m[(0, 0)], 4);
+    /// assert_eq!(m[(1, 1)], 1);
+    /// ```
+    pub fn swap(&mut self, pos1: (usize, usize), pos2: (usize, usize)) {
+        let (r1, c1) = pos1;
+        let (r2, c2) = pos2;
+        assert!(r1 < self.rows && c1 < self.cols,
+            "First index out of bounds: ({}, {})", r1, c1);
+        assert!(r2 < self.rows && c2 < self.cols,
+            "Second index out of bounds: ({}, {})", r2, c2);
+
+        let idx1 = r1 * self.cols + c1;
+        let idx2 = r2 * self.cols + c2;
+        self.data.swap(idx1, idx2);
+    }
+
+    /// Take ownership of the underlying data vector.
+    ///
+    /// This is useful when you need to process the raw data without copying.
+    ///
+    /// # Example
+    /// ```
+    /// use matrix_multiply::Matrix;
+    ///
+    /// let m = Matrix::from_vec(2, 2, vec![1, 2, 3, 4]).unwrap();
+    /// let (rows, cols, data) = m.into_raw_parts();
+    /// assert_eq!(rows, 2);
+    /// assert_eq!(cols, 2);
+    /// assert_eq!(data, vec![1, 2, 3, 4]);
+    /// ```
+    pub fn into_raw_parts(self) -> (usize, usize, Vec<T>) {
+        (self.rows, self.cols, self.data)
+    }
+}
+
+// =============================================================================
 // Additional Utility Methods
 // =============================================================================
 
