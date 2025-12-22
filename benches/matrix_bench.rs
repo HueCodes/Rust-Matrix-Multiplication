@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use matrix_multiply::{Matrix, simd_instruction_set};
+use matrix_multiply::{Matrix, simd_instruction_set, thread_count};
 
 fn bench_matrix_multiply_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("matrix_multiply_comparison");
@@ -296,6 +296,178 @@ fn bench_all_algorithms_comparison(c: &mut Criterion) {
     group.finish();
 }
 
+// =============================================================================
+// Parallel Benchmarks
+// =============================================================================
+
+fn bench_parallel_f32(c: &mut Criterion) {
+    println!("Thread count: {}", thread_count());
+    println!("SIMD Instruction Set: {}", simd_instruction_set());
+
+    let mut group = c.benchmark_group("parallel_f32");
+    group.sample_size(10);
+
+    for size in [128, 256, 512].iter() {
+        let a_data: Vec<f32> = (0..size * size).map(|i| (i % 100) as f32).collect();
+        let b_data: Vec<f32> = (0..size * size).map(|i| ((i * 2) % 100) as f32).collect();
+
+        let a = Matrix::from_vec(*size, *size, a_data).unwrap();
+        let b = Matrix::from_vec(*size, *size, b_data).unwrap();
+
+        group.bench_with_input(BenchmarkId::new("naive", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("simd", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_simd(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("parallel_simd", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_parallel_simd(&b).unwrap());
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_parallel_f32_large(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parallel_f32_large");
+    group.sample_size(10);
+
+    for size in [1024, 2048].iter() {
+        let a_data: Vec<f32> = (0..size * size).map(|i| (i % 100) as f32).collect();
+        let b_data: Vec<f32> = (0..size * size).map(|i| ((i * 2) % 100) as f32).collect();
+
+        let a = Matrix::from_vec(*size, *size, a_data).unwrap();
+        let b = Matrix::from_vec(*size, *size, b_data).unwrap();
+
+        group.bench_with_input(BenchmarkId::new("simd", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_simd(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("parallel_simd", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_parallel_simd(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("strassen", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_strassen(&b).unwrap());
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_parallel_f64(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parallel_f64");
+    group.sample_size(10);
+
+    for size in [128, 256, 512].iter() {
+        let a_data: Vec<f64> = (0..size * size).map(|i| (i % 100) as f64).collect();
+        let b_data: Vec<f64> = (0..size * size).map(|i| ((i * 2) % 100) as f64).collect();
+
+        let a = Matrix::from_vec(*size, *size, a_data).unwrap();
+        let b = Matrix::from_vec(*size, *size, b_data).unwrap();
+
+        group.bench_with_input(BenchmarkId::new("naive", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("simd", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_simd(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("parallel_simd", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_parallel_simd(&b).unwrap());
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_parallel_generic(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parallel_generic");
+    group.sample_size(10);
+
+    for size in [128, 256, 512].iter() {
+        let a_data: Vec<i64> = (0..size * size).map(|i| (i % 100) as i64).collect();
+        let b_data: Vec<i64> = (0..size * size).map(|i| ((i * 2) % 100) as i64).collect();
+
+        let a = Matrix::from_vec(*size, *size, a_data).unwrap();
+        let b = Matrix::from_vec(*size, *size, b_data).unwrap();
+
+        group.bench_with_input(BenchmarkId::new("naive", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply(&b).unwrap());
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("parallel", size), size, |bench, _| {
+            bench.iter(|| {
+                black_box(a.multiply_parallel(&b).unwrap());
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_all_methods_comparison(c: &mut Criterion) {
+    let mut group = c.benchmark_group("all_methods");
+    group.sample_size(10);
+
+    // Compare all methods on 512x512 matrices
+    let size = 512;
+    let a_data: Vec<f32> = (0..size * size).map(|i| (i % 100) as f32).collect();
+    let b_data: Vec<f32> = (0..size * size).map(|i| ((i * 2) % 100) as f32).collect();
+
+    let a = Matrix::from_vec(size, size, a_data).unwrap();
+    let b = Matrix::from_vec(size, size, b_data).unwrap();
+
+    group.bench_function("naive_512x512", |bench| {
+        bench.iter(|| {
+            black_box(a.multiply(&b).unwrap());
+        });
+    });
+
+    group.bench_function("simd_512x512", |bench| {
+        bench.iter(|| {
+            black_box(a.multiply_simd(&b).unwrap());
+        });
+    });
+
+    group.bench_function("parallel_simd_512x512", |bench| {
+        bench.iter(|| {
+            black_box(a.multiply_parallel_simd(&b).unwrap());
+        });
+    });
+
+    group.bench_function("strassen_512x512", |bench| {
+        bench.iter(|| {
+            black_box(a.multiply_strassen(&b).unwrap());
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_matrix_multiply_comparison,
@@ -307,6 +479,11 @@ criterion_group!(
     bench_simd_f64,
     bench_simd_f64_large,
     bench_simd_rectangular,
-    bench_all_algorithms_comparison
+    bench_all_algorithms_comparison,
+    bench_parallel_f32,
+    bench_parallel_f32_large,
+    bench_parallel_f64,
+    bench_parallel_generic,
+    bench_all_methods_comparison
 );
 criterion_main!(benches);
