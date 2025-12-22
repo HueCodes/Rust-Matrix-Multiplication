@@ -1,5 +1,7 @@
+mod parallel;
 mod simd;
 
+pub use parallel::thread_count;
 pub use simd::{simd_available, simd_instruction_set};
 
 /// A generic matrix structure for numerical computations
